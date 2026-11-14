@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmartKey Studio</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--ink:#0f172a;--mute:#64748b;--line:#e2e8f0;--brand:#2563eb;--brand-ink:#fff;--ok:#16a34a;--bad:#dc2626;--oled:#05080d;--oled-ink:#e8f3ff}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0b1020;--card:#131a2e;--ink:#e6ebf5;--mute:#94a3b8;--line:#243049;--brand:#3b82f6}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.logo{font-weight:700;font-size:18px;letter-spacing:.2px}.logo span{color:var(--brand)}
+.sp{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--mute);border:1px solid var(--line);padding:4px 10px;border-radius:999px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}.on .dot{background:var(--ok)}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px}
+button.p{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+main{max-width:1040px;margin:0 auto;padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.wide{grid-column:1/-1}
+h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--mute)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.stat b{display:block;font-size:24px}.stat small{color:var(--mute)}
+label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
+input,select,textarea{width:100%;font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cnt{float:right;font-size:12px}
+canvas{width:100%;max-width:384px;image-rendering:pixelated;border-radius:10px;border:1px solid var(--line);display:block;margin:0 auto}
+.note{font-size:12px;color:var(--mute);text-align:center;margin-top:6px}
+table{width:100%;border-collapse:collapse}
+td{padding:10px 6px;border-top:1px solid var(--line);vertical-align:middle}
+td.x{text-align:right;white-space:nowrap}
+.empty{color:var(--mute);padding:14px 0}
+.bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;opacity:0;transition:.25s;pointer-events:none}
+#toast.show{opacity:1}
+@media(max-width:760px){main{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">SmartKey <span>Studio</span></div>
+  <div class="sp"></div>
+  <span class="pill" id="pill"><i class="dot"></i><span id="pt">Not connected</span></span>
+  <button class="p" id="conn">Connect keychain</button>
+</header>
+
+<main>
+  <section class="card wide">
+    <h2>Lifetime activity</h2>
+    <div class="stats">
+      <div class="stat"><b id="s0">–</b><small>Shake sessions</small></div>
+      <div class="stat"><b id="s1">–</b><small>Steps</small></div>
+      <div class="stat"><b id="s2">–</b><small>Pick-ups</small></div>
+      <div class="stat"><b id="s3">–</b><small>Drops</small></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>New message rule</h2>
+    <div class="row">
+      <div><label>When</label><select id="trig"></select></div>
+      <div><label>Count (N)</label><input id="n" type="number" min="1" max="65000" value="10"></div>
+    </div>
+    <div class="row">
+      <div><label>Repeat</label><select id="every"><option value="1">Every N times</option><option value="0">Only once at N</option></select></div>
+      <div><label>Face first</label><select id="emo"></select></div>
+    </div>
+    <div class="row">
+      <div><label>Show text for (seconds)</label><input id="secs" type="number" min="1" max="30" value="5"></div>
+      <div></div>
+    </div>
+    <label>Message <span class="cnt" id="cnt">0/40</span></label>
+    <textarea id="text" rows="2" maxlength="40" placeholder="Type what the keychain should say"></textarea>
+    <div class="bar"><button class="p" id="add">Add rule</button><button id="test">Send to keychain now</button></div>
+  </section>
+
+  <section class="card">
+    <h2>OLED preview</h2>
+    <canvas id="cv" width="128" height="64"></canvas>
+    <div class="note">The chosen face shows for 1.2 s, then this text. ASCII only, 40 characters max.</div>
+  </section>
+
+  <section class="card wide">
+    <h2>Rules on this keychain</h2>
+    <div id="list"></div>
+    <div class="bar">
+      <button class="p" id="up" disabled>Upload all to keychain</button>
+      <button id="rst" disabled>Reset counters</button>
+      <span class="note" id="hint">Rules are saved in this browser. Upload writes them into the keychain’s memory, so it works offline afterwards.</span>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e',RX='6e400002-b5a3-f393-e0a9-e50e24dcca9e',TX='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const TRIG=[['Shakes','shake'],['Steps','step'],['Pick-ups','pick-up'],['Drops','drop'],['Idle seconds','idle second']];
+const EMO=['Neutral','Happy','Sad','Angry','Surprised','Love','Sleepy','Dizzy','Wink','Cool','Scared','Bored','Yawn'];
+const $=id=>document.getElementById(id);
+let rules=JSON.parse(localStorage.getItem('skRules')||'null')||[
+  {t:0,n:10,e:1,emo:7,s:5,text:'Easy! I am dizzy now'},
+  {t:1,n:1000,e:0,emo:9,s:6,text:'1000 steps! Nice walk'},
+  {t:4,n:60,e:0,emo:6,s:4,text:'Wake me up...'}];
+let rx=null,dev=null,busy=false;
+const enc=new TextEncoder(),dec=new TextDecoder();
+
+TRIG.forEach((t,i)=>$('trig').add(new Option(t[0],i)));
+EMO.forEach((e,i)=>$('emo').add(new Option(e,i)));
+$('emo').value=1;
+
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('show'),2600)}
+function save(){localStorage.setItem('skRules',JSON.stringify(rules))}
+function clean(s){return s.replace(/[|]/g,' ').replace(/[^\x20-\x7E]/g,'').trim()}
+function describe(r){const k=TRIG[r.t][1];
+  const w=r.t===4?`After ${r.n} s idle`:(r.e?`Every ${r.n} ${k}${r.n>1?'s':''}`:`At ${r.n} ${k}${r.n>1?'s':''} (once)`);
+  return `${w} → “${r.text}” <span class="note">(${EMO[r.emo]}, ${r.s} s)</span>`}
+function render(){
+  $('list').innerHTML=rules.length?'<table>'+rules.map((r,i)=>`<tr><td>${describe(r)}</td><td class="x"><button onclick="del(${i})">Delete</button></td></tr>`).join('')+'</table>':'<div class="empty">No rules yet. Add one above.</div>';
+  $('up').disabled=!rx||!rules.length||busy;$('rst').disabled=!rx}
+function del(i){rules.splice(i,1);save();render()}
+function form(){return{t:+$('trig').value,n:Math.max(1,Math.min(65000,+$('n').value||1)),e:+$('every').value,emo:+$('emo').value,s:Math.max(1,Math.min(30,+$('secs').value||5)),text:clean($('text').value)}}
+
+// ---- OLED preview: same 20-char word wrap as the firmware ----
+function wrap(s){const L=[];while(s.length&&L.length<4){let c=Math.min(s.length,20);if(s.length>20){const sp=s.lastIndexOf(' ',20);if(sp>0)c=sp}L.push(s.slice(0,c));s=s.slice(c).trim()}return L}
+function draw(){
+  const c=$('cv'),x=c.getContext('2d'),css=getComputedStyle(document.documentElement);
+  x.fillStyle='#05080d';x.fillRect(0,0,128,64);x.strokeStyle='#e8f3ff';x.lineWidth=1;
+  x.beginPath();x.roundRect(.5,.5,127,63,6);x.stroke();
+  x.fillStyle='#e8f3ff';x.font='11px monospace';x.textAlign='center';
+  const L=wrap(clean($('text').value)||'Your message here'),y0=32-(L.length*13)/2+10;
+  L.forEach((l,i)=>x.fillText(l,64,y0+i*13));
+  $('cnt').textContent=$('text').value.length+'/40'}
+['text','trig','n','emo'].forEach(id=>$(id).addEventListener('input',draw));
+$('trig').addEventListener('change',()=>{$('every').disabled=$('trig').value==='4';if($('trig').value==='4')$('every').value='0'});
+
+$('add').onclick=()=>{const r=form();if(!r.text)return toast('Type a message first');if(rules.length>=16)return toast('Max 16 rules');rules.push(r);save();render();toast('Rule added')};
+
+// ---- Bluetooth ----
+async function send(cmd){const d=enc.encode(cmd);try{await rx.writeValueWithResponse(d)}catch(e){await rx.writeValue(d)}await new Promise(r=>setTimeout(r,60))}
+function setConn(on,name){$('pill').classList.toggle('on',on);$('pt').textContent=on?('Connected · '+name):'Not connected';$('conn').textContent=on?'Disconnect':'Connect keychain';['test'].forEach(()=>{});render()}
+$('conn').onclick=async()=>{
+  if(dev&&dev.gatt.connected){dev.gatt.disconnect();return}
+  if(!navigator.bluetooth)return toast('Use Chrome/Edge (Android or desktop). On iPhone use the Bluefy browser.');
+  try{
+    dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'SmartKey'}],optionalServices:[SVC]});
+    dev.addEventListener('gattserverdisconnected',()=>{rx=null;setConn(false)});
+    const srv=await dev.gatt.connect(),svc=await srv.getPrimaryService(SVC);
+    rx=await svc.getCharacteristic(RX);const tx=await svc.getCharacteristic(TX);
+    await tx.startNotifications();
+    tx.addEventListener('characteristicvaluechanged',e=>{const m=dec.decode(e.target.value);
+      if(m.startsWith('C|'))m.split('|').slice(1).forEach((v,i)=>$('s'+i).textContent=(+v).toLocaleString());
+      else if(m==='ERR')toast('Keychain rejected a command')});
+    setConn(true,dev.name);await send('GET');toast('Connected')
+  }catch(e){if(e.name!=='NotFoundError')toast('Connection failed: '+e.message)}};
+
+$('up').onclick=async()=>{busy=true;render();
+  try{await send('CLR');for(const r of rules)await send(`ADD|${r.t}|${r.n}|${r.e}|${r.emo}|${r.s}|${r.text}`);await send('SAVE');toast('Uploaded '+rules.length+' rules')}
+  catch(e){toast('Upload failed: '+e.message)}busy=false;render()};
+$('test').onclick=async()=>{const r=form();if(!r.text)return toast('Type a message first');if(!rx)return toast('Connect the keychain first');await send(`NOW|${r.emo}|${r.s}|${r.text}`)};
+$('rst').onclick=async()=>{if(confirm('Reset all lifetime counters on the keychain?'))await send('RST')};
+
+render();draw();
+</script>
+</body>
+</html>
