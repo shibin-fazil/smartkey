@@ -90,6 +90,7 @@ td.x{text-align:right;white-space:nowrap}
     <div class="bar">
       <button class="p" id="up" disabled>Upload all to keychain</button>
       <button id="rst" disabled>Reset counters</button>
+      <span class="pill" id="sync">Keychain: not connected</span>
       <span class="note" id="hint">Rules are saved in this browser. Upload writes them into the keychain’s memory, so it works offline afterwards.</span>
     </div>
   </section>
@@ -105,7 +106,7 @@ let rules=JSON.parse(localStorage.getItem('skRules')||'null')||[
   {t:0,n:10,e:1,emo:7,s:5,text:'Easy! I am dizzy now'},
   {t:1,n:1000,e:0,emo:9,s:6,text:'1000 steps! Nice walk'},
   {t:4,n:60,e:0,emo:6,s:4,text:'Wake me up...'}];
-let rx=null,dev=null,busy=false;
+let rx=null,dev=null,busy=false,devRules=null;
 const enc=new TextEncoder(),dec=new TextDecoder();
 
 TRIG.forEach((t,i)=>$('trig').add(new Option(t[0],i)));
@@ -120,8 +121,9 @@ function describe(r){const k=TRIG[r.t][1];
   return `${w} → “${r.text}” <span class="note">(${EMO[r.emo]}, ${r.s} s)</span>`}
 function render(){
   $('list').innerHTML=rules.length?'<table>'+rules.map((r,i)=>`<tr><td>${describe(r)}</td><td class="x"><button onclick="del(${i})">Delete</button></td></tr>`).join('')+'</table>':'<div class="empty">No rules yet. Add one above.</div>';
-  $('up').disabled=!rx||!rules.length||busy;$('rst').disabled=!rx}
-function del(i){rules.splice(i,1);save();render()}
+  $('up').disabled=!rx||!rules.length||busy;$('rst').disabled=!rx;sync()}
+function sync(){const s=$('sync');if(!rx){s.textContent='Keychain: not connected';s.style.color='';return}const ok=devRules===rules.length;s.textContent='Keychain has '+(devRules===null?'?':devRules)+' of '+rules.length+' rules'+(ok?' ✓':' · press Upload');s.style.color=ok?'var(--ok)':'var(--bad)'}
+function del(i){rules.splice(i,1);save();render();if(rx)upload()}
 function form(){return{t:+$('trig').value,n:Math.max(1,Math.min(65000,+$('n').value||1)),e:+$('every').value,emo:+$('emo').value,s:Math.max(1,Math.min(30,+$('secs').value||5)),text:clean($('text').value)}}
 
 // ---- OLED preview: same 20-char word wrap as the firmware ----
@@ -137,7 +139,7 @@ function draw(){
 ['text','trig','n','emo'].forEach(id=>$(id).addEventListener('input',draw));
 $('trig').addEventListener('change',()=>{$('every').disabled=$('trig').value==='4';if($('trig').value==='4')$('every').value='0'});
 
-$('add').onclick=()=>{const r=form();if(!r.text)return toast('Type a message first');if(rules.length>=16)return toast('Max 16 rules');rules.push(r);save();render();toast('Rule added')};
+$('add').onclick=()=>{const r=form();if(!r.text)return toast('Type a message first');if(rules.length>=16)return toast('Max 16 rules');rules.push(r);save();render();toast('Rule added');if(rx)upload()};
 
 // ---- Bluetooth ----
 async function send(cmd){const d=enc.encode(cmd);try{await rx.writeValueWithResponse(d)}catch(e){await rx.writeValue(d)}await new Promise(r=>setTimeout(r,60))}
@@ -152,14 +154,15 @@ $('conn').onclick=async()=>{
     rx=await svc.getCharacteristic(RX);const tx=await svc.getCharacteristic(TX);
     await tx.startNotifications();
     tx.addEventListener('characteristicvaluechanged',e=>{const m=dec.decode(e.target.value);
-      if(m.startsWith('C|'))m.split('|').slice(1).forEach((v,i)=>$('s'+i).textContent=(+v).toLocaleString());
+      if(m.startsWith('C|')){m.split('|').slice(1).forEach((v,i)=>{if(i<4)$('s'+i).textContent=(+v).toLocaleString();else{devRules=+v;sync()}})}
       else if(m==='ERR')toast('Keychain rejected a command')});
     setConn(true,dev.name);await send('GET');toast('Connected')
   }catch(e){if(e.name!=='NotFoundError')toast('Connection failed: '+e.message)}};
 
-$('up').onclick=async()=>{busy=true;render();
-  try{await send('CLR');for(const r of rules)await send(`ADD|${r.t}|${r.n}|${r.e}|${r.emo}|${r.s}|${r.text}`);await send('SAVE');toast('Uploaded '+rules.length+' rules')}
-  catch(e){toast('Upload failed: '+e.message)}busy=false;render()};
+async function upload(){if(!rx||busy)return;busy=true;render();
+  try{await send('CLR');for(const r of rules)await send(`ADD|${r.t}|${r.n}|${r.e}|${r.emo}|${r.s}|${r.text}`);await send('SAVE');await send('GET');toast('Uploaded '+rules.length+' rules')}
+  catch(e){toast('Upload failed: '+e.message)}busy=false;render()}
+$('up').onclick=upload;
 $('test').onclick=async()=>{const r=form();if(!r.text)return toast('Type a message first');if(!rx)return toast('Connect the keychain first');await send(`NOW|${r.emo}|${r.s}|${r.text}`)};
 $('rst').onclick=async()=>{if(confirm('Reset all lifetime counters on the keychain?'))await send('RST')};
 
