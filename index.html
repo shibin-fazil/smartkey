@@ -43,6 +43,9 @@ td.x{text-align:right;white-space:nowrap}
 .tile b{display:block;font-size:13px;margin:6px 0 4px}.tile .bar{justify-content:center;margin-top:6px}.tile button{padding:5px 9px;font-size:12px}
 .seg label{display:inline-flex;gap:6px;align-items:center;margin:4px 16px 4px 0;font-size:14px;color:var(--ink)}.seg input{width:auto}
 input[type=range]{padding:0}
+.cal-box{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--bg);margin-top:10px;display:none}
+.cal-box.active{display:block;border-color:var(--brand)}
+.cal-box b{display:block;font-size:15px;margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -90,7 +93,7 @@ input[type=range]{padding:0}
   </section>
 
   <section class="card wide">
-    <h2>Display mode &amp; brightness</h2>
+    <h2>Display mode & brightness</h2>
     <div class="seg"><label><input type="radio" name="xm" value="0" checked>Interactive eyes ON</label><label><input type="radio" name="xm" value="1">Eyes OFF · animation loop</label><label><input type="radio" name="xm" value="2">Eyes OFF · floating message</label></div>
     <div class="row">
       <div><label>Animation</label><select id="xanim"></select></div>
@@ -102,6 +105,25 @@ input[type=range]{padding:0}
     <input id="xbrt" type="range" min="10" max="150" value="100">
     <div class="bar"><button class="p" id="xapply">Apply to keychain</button><span class="note">Only the animation you apply is stored on the keychain. The library stays on this page.</span></div>
   </section>
+
+  <section class="card wide">
+    <h2>3D Orientation Calibration (MPU6050)</h2>
+    <div class="note" style="text-align:left;margin-top:0">
+      Teaches the keychain how the sensor is mounted inside your case and saves the 3D rotation matrix & offsets inside the keychain's flash memory.
+      <br><b>Step 1:</b> Lay the keychain flat on a level table with the OLED screen facing straight UP.
+      <br><b>Step 2:</b> Keep the bottom edge resting on the table and lift the TOP edge (above the text) ~30° and hold still.
+    </div>
+    <div class="cal-box" id="calBox">
+      <b id="calTitle">Preparing calibration...</b>
+      <span id="calDesc" class="note">Follow the prompts on the keychain OLED screen.</span>
+    </div>
+    <div class="bar">
+      <button class="p" id="calBtn" disabled>Calibrate keychain</button>
+      <button id="calClrBtn" disabled>Erase calibration</button>
+      <span class="pill" id="calStatus">Not calibrated in Studio</span>
+    </div>
+  </section>
+
   <section class="card wide"><h2>Emotions · click to show on keychain</h2><div class="tiles" id="emos"></div></section>
   <section class="card wide"><h2>Animations · play once or set as loop</h2><div class="tiles big" id="anis"></div></section>
   <section class="card wide">
@@ -126,7 +148,8 @@ let rules=JSON.parse(localStorage.getItem('skRules')||'null')||[
   {t:0,n:10,e:1,emo:7,s:5,text:'Easy! I am dizzy now'},
   {t:1,n:1000,e:0,emo:9,s:6,text:'1000 steps! Nice walk'},
   {t:4,n:60,e:0,emo:6,s:4,text:'Wake me up...'}];
-let rx=null,dev=null,busy=false,devRules=null;
+let calInfo=JSON.parse(localStorage.getItem('skCal')||'null');
+let rx=null,dev=null,busy=false,devRules=null,calRunning=false;
 const enc=new TextEncoder(),dec=new TextDecoder();
 
 TRIG.forEach((t,i)=>$('trig').add(new Option(t[0],i)));
@@ -139,9 +162,21 @@ function clean(s){return s.replace(/[|]/g,' ').replace(/[^\x20-\x7E]/g,'').trim(
 function describe(r){const k=TRIG[r.t][1];
   const w=r.t===4?`After ${r.n} s idle`:(r.e?`Every ${r.n} ${k}${r.n>1?'s':''}`:`At ${r.n} ${k}${r.n>1?'s':''} (once)`);
   return `${w} → “${r.text}” <span class="note">(${EMO[r.emo]}, ${r.s} s)</span>`}
+function renderCalStatus(){
+  const s=$('calStatus');
+  if(calInfo&&calInfo.ok){
+    s.textContent='Calibrated & stored ('+calInfo.date+') ✓';
+    s.style.color='var(--ok)';
+  }else{
+    s.textContent='Not calibrated / default axes';
+    s.style.color='';
+  }
+  $('calBtn').disabled=!rx||busy||calRunning;
+  $('calClrBtn').disabled=!rx||busy||calRunning;
+}
 function render(){
   $('list').innerHTML=rules.length?'<table>'+rules.map((r,i)=>`<tr><td>${describe(r)}</td><td class="x"><button onclick="del(${i})">Delete</button></td></tr>`).join('')+'</table>':'<div class="empty">No rules yet. Add one above.</div>';
-  $('up').disabled=!rx||!rules.length||busy;$('rst').disabled=!rx;sync()}
+  $('up').disabled=!rx||!rules.length||busy;$('rst').disabled=!rx;sync();renderCalStatus()}
 function sync(){const s=$('sync');if(!rx){s.textContent='Keychain: not connected';s.style.color='';return}const ok=devRules===rules.length;s.textContent='Keychain has '+(devRules===null?'?':devRules)+' of '+rules.length+' rules'+(ok?' ✓':' · press Upload');s.style.color=ok?'var(--ok)':'var(--bad)'}
 function del(i){rules.splice(i,1);save();render();if(rx)upload()}
 function form(){return{t:+$('trig').value,n:Math.max(1,Math.min(65000,+$('n').value||1)),e:+$('every').value,emo:+$('emo').value,s:Math.max(1,Math.min(30,+$('secs').value||5)),text:clean($('text').value)}}
@@ -163,7 +198,7 @@ $('add').onclick=()=>{const r=form();if(!r.text)return toast('Type a message fir
 
 // ---- Bluetooth ----
 async function send(cmd){const d=enc.encode(cmd);try{await rx.writeValueWithResponse(d)}catch(e){await rx.writeValue(d)}await new Promise(r=>setTimeout(r,60))}
-function setConn(on,name){$('pill').classList.toggle('on',on);$('pt').textContent=on?('Connected · '+name):'Not connected';$('conn').textContent=on?'Disconnect':'Connect keychain';['test'].forEach(()=>{});render()}
+function setConn(on,name){$('pill').classList.toggle('on',on);$('pt').textContent=on?('Connected · '+name):'Not connected';$('conn').textContent=on?'Disconnect':'Connect keychain';render()}
 $('conn').onclick=async()=>{
   if(dev&&dev.gatt.connected){dev.gatt.disconnect();return}
   if(!navigator.bluetooth)return toast('Use Chrome/Edge (Android or desktop). On iPhone use the Bluefy browser.');
@@ -186,6 +221,63 @@ $('up').onclick=upload;
 $('test').onclick=async()=>{const r=form();if(!r.text)return toast('Type a message first');if(!rx)return toast('Connect the keychain first');await send(`NOW|${r.emo}|${r.s}|${r.text}`)};
 $('rst').onclick=async()=>{if(confirm('Reset all lifetime counters on the keychain?'))await send('RST')};
 
+// ---- 3D Calibration via BLE ----
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+$('calBtn').onclick=async()=>{
+  if(!need()||calRunning)return;
+  calRunning=true;renderCalStatus();
+  const box=$('calBox'),tEl=$('calTitle'),dEl=$('calDesc');
+  box.classList.add('active');
+  try{
+    const curB=+$('xbrt').value||100;
+    await send('BRT|11');await wait(120);
+    await send('BRT|149');await wait(120);
+    await send('BRT|'+curB);
+
+    for(let s=6;s>0;s--){
+      tEl.textContent=`Step 1 of 2: Lay FLAT, screen UP (${s}s)`;
+      dEl.textContent='Place the keychain flat on a level table with the OLED screen facing straight up.';
+      await wait(1000);
+    }
+    tEl.textContent='Step 1 of 2: Keep still... measuring';
+    dEl.textContent='Sampling flat Z-axis gravity vector and sensor offsets (2s)...';
+    await wait(2100);
+
+    for(let s=8;s>0;s--){
+      tEl.textContent=`Step 2 of 2: Lift TOP edge ~30°, hold (${s}s)`;
+      dEl.textContent='Keep the bottom edge on the table and tilt the top edge (above the letters) up by ~30°.';
+      await wait(1000);
+    }
+    tEl.textContent='Step 2 of 2: Hold still... measuring';
+    dEl.textContent='Computing 3D rotation matrix and saving to keychain flash (2s)...';
+    await wait(2200);
+
+    calInfo={ok:true,date:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})};
+    localStorage.setItem('skCal',JSON.stringify(calInfo));
+    tEl.textContent='Calibrated! Saved to keychain flash.';
+    dEl.textContent='Check the keychain OLED screen to confirm "Calibrated! saved to flash".';
+    toast('Calibration saved inside keychain');
+    setTimeout(()=>box.classList.remove('active'),4000);
+  }catch(e){
+    box.classList.remove('active');
+    toast('Calibration command failed: '+e.message);
+  }
+  calRunning=false;renderCalStatus();
+};
+
+$('calClrBtn').onclick=async()=>{
+  if(!need()||calRunning)return;
+  if(!confirm('Erase saved 3D calibration from the keychain?'))return;
+  try{
+    const curB=+$('xbrt').value||100;
+    await send('BRT|12');await wait(120);
+    await send('BRT|148');await wait(120);
+    await send('BRT|'+curB);
+    calInfo=null;localStorage.removeItem('skCal');
+    renderCalStatus();
+    toast('Calibration erased from keychain');
+  }catch(e){toast('Failed: '+e.message)}
+};
 
 /* ===== emotions (canvas port of the firmware faces) ===== */
 const BG='#05080d',FG='#e8f3ff',TAU=Math.PI*2,P=Math.PI;
