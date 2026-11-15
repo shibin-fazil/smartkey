@@ -38,6 +38,11 @@ td.x{text-align:right;white-space:nowrap}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;opacity:0;transition:.25s;pointer-events:none}
 #toast.show{opacity:1}
 @media(max-width:760px){main{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}.tiles.big{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.tile{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center;background:var(--bg)}.tile.c{cursor:pointer}.tile.c:hover{border-color:var(--brand)}
+.tile b{display:block;font-size:13px;margin:6px 0 4px}.tile .bar{justify-content:center;margin-top:6px}.tile button{padding:5px 9px;font-size:12px}
+.seg label{display:inline-flex;gap:6px;align-items:center;margin:4px 16px 4px 0;font-size:14px;color:var(--ink)}.seg input{width:auto}
+input[type=range]{padding:0}
 </style>
 </head>
 <body>
@@ -84,6 +89,21 @@ td.x{text-align:right;white-space:nowrap}
     <div class="note">The chosen face shows for 1.2 s, then this text. ASCII only, 40 characters max.</div>
   </section>
 
+  <section class="card wide">
+    <h2>Display mode &amp; brightness</h2>
+    <div class="seg"><label><input type="radio" name="xm" value="0" checked>Interactive eyes ON</label><label><input type="radio" name="xm" value="1">Eyes OFF · animation loop</label><label><input type="radio" name="xm" value="2">Eyes OFF · floating message</label></div>
+    <div class="row">
+      <div><label>Animation</label><select id="xanim"></select></div>
+      <div><label>Eyes ON: also play it every N seconds (0 = never)</label><input id="xevery" type="number" min="0" max="3600" value="0"></div>
+    </div>
+    <label>Floating message (moves like water with the keychain) <span class="cnt" id="xc">0/40</span></label>
+    <input id="xmsg" maxlength="40" placeholder="Your name · @instagram_id">
+    <label>Brightness <span class="cnt" id="xbv">100%</span></label>
+    <input id="xbrt" type="range" min="10" max="150" value="100">
+    <div class="bar"><button class="p" id="xapply">Apply to keychain</button><span class="note">Only the animation you apply is stored on the keychain. The library stays on this page.</span></div>
+  </section>
+  <section class="card wide"><h2>Emotions · click to show on keychain</h2><div class="tiles" id="emos"></div></section>
+  <section class="card wide"><h2>Animations · play once or set as loop</h2><div class="tiles big" id="anis"></div></section>
   <section class="card wide">
     <h2>Rules on this keychain</h2>
     <div id="list"></div>
@@ -166,6 +186,82 @@ $('up').onclick=upload;
 $('test').onclick=async()=>{const r=form();if(!r.text)return toast('Type a message first');if(!rx)return toast('Connect the keychain first');await send(`NOW|${r.emo}|${r.s}|${r.text}`)};
 $('rst').onclick=async()=>{if(confirm('Reset all lifetime counters on the keychain?'))await send('RST')};
 
+
+/* ===== emotions (canvas port of the firmware faces) ===== */
+const BG='#05080d',FG='#e8f3ff',TAU=Math.PI*2,P=Math.PI;
+function pre(g){g.fillStyle=BG;g.fillRect(0,0,128,64);g.fillStyle=g.strokeStyle=FG;g.lineWidth=2;g.lineCap='round'}
+const col=(g,c)=>{g.fillStyle=c};
+function eye(g,x,y,w,h,px=0,py=0,pr=5){col(g,FG);g.beginPath();g.roundRect(x-w/2,y-h/2,w,h,7);g.fill();col(g,BG);g.beginPath();g.arc(x+px,y+py,pr,0,TAU);g.fill();col(g,FG)}
+const arc=(g,x,y,r,a,b)=>{g.beginPath();g.arc(x,y,r,a,b);g.lineWidth=3;g.stroke();g.lineWidth=2};
+const tri=(g,a,b,c,d,e,f,cl)=>{col(g,cl||FG);g.beginPath();g.moveTo(a,b);g.lineTo(c,d);g.lineTo(e,f);g.fill();col(g,FG)};
+const line=(g,...p)=>{g.beginPath();g.moveTo(p[0],p[1]);for(let i=2;i<p.length;i+=2)g.lineTo(p[i],p[i+1]);g.stroke()};
+function heart(g,x,y,s){g.beginPath();g.arc(x-s,y,s,0,TAU);g.arc(x+s,y,s,0,TAU);g.fill();tri(g,x-2*s,y+s/3,x+2*s,y+s/3,x,y+2.5*s)}
+function spir(g,x,y){g.beginPath();for(let a=0;a<12.5;a+=.4)g.lineTo(x+a*Math.cos(a),y+a*Math.sin(a));g.lineWidth=1.5;g.stroke();g.lineWidth=2}
+const zig=(g,x,y,h,n,w)=>{const p=[x,y];for(let i=1;i<=n;i++)p.push(x+i*w/n,i%2?y-h:y);line(g,...p)};
+function face(g,e){pre(g);const L=38,R=90,Y=22;
+ switch(e){
+ case 0:eye(g,L,Y,26,28);eye(g,R,Y,26,28);arc(g,64,42,9,0,P);break;
+ case 1:arc(g,L,28,10,P,0);arc(g,R,28,10,P,0);g.beginPath();g.arc(64,44,11,0,P);g.fill();break;
+ case 2:eye(g,L,25,24,22,0,3);eye(g,R,25,24,22,0,3);line(g,25,12,49,5);line(g,103,12,79,5);arc(g,64,61,11,P,0);g.beginPath();g.arc(31,40,2,0,TAU);g.fill();break;
+ case 3:eye(g,L,Y+2,26,24);eye(g,R,Y+2,26,24);tri(g,L-14,Y-12,L+14,Y-12,L+14,Y+3,BG);tri(g,R-14,Y-12,R+14,Y-12,R-14,Y+3,BG);zig(g,49,56,5,6,30);break;
+ case 4:eye(g,L,23,30,32,0,0,3);eye(g,R,23,30,32,0,0,3);arc(g,64,54,6,0,TAU);break;
+ case 5:heart(g,L,24,7);heart(g,R,24,7);g.beginPath();g.arc(64,46,8,0,P);g.fill();break;
+ case 6:arc(g,L,24,10,0,P);arc(g,R,24,10,0,P);arc(g,64,50,4,0,TAU);g.font='bold 11px sans-serif';g.fillText('z Z',100,14);break;
+ case 7:spir(g,L,24);spir(g,R,24);g.beginPath();for(let x=-13;x<=14;x++)g.lineTo(64+x,52+Math.sin(x*.5)*3);g.stroke();break;
+ case 8:eye(g,L,Y,26,28);arc(g,R,28,10,P,0);g.beginPath();g.arc(64,44,11,0,P);g.fill();line(g,112,12,120,12);line(g,116,8,116,16);break;
+ case 9:g.beginPath();g.roundRect(22,14,32,20,5);g.roundRect(74,14,32,20,5);g.fill();g.fillRect(54,16,20,3);line(g,54,50,70,50,76,45);break;
+ case 10:eye(g,L,Y,26,28,0,0,2);eye(g,R,Y,26,28,0,0,2);line(g,26,7,48,2);line(g,102,7,80,2);zig(g,50,56,4,7,28);g.beginPath();g.arc(107,14,2,0,TAU);g.fill();break;
+ case 11:eye(g,L,Y+2,26,24,3,1);eye(g,R,Y+2,26,24,3,1);col(g,BG);g.fillRect(24,10,28,13);g.fillRect(76,10,28,13);col(g,FG);line(g,56,52,72,52);break;
+ case 12:arc(g,L,24,10,0,P);arc(g,R,24,10,0,P);g.beginPath();g.ellipse(64,48,9,12,0,0,TAU);g.stroke();break}}
+const EMO_N=['Neutral','Happy','Sad','Angry','Surprised','Love','Sleepy','Dizzy','Wink','Cool','Scared','Bored','Yawn'];
+function need(){if(!rx){toast('Connect the keychain first');return false}return true}
+const emoBox=$('emos');
+EMO_N.forEach((n,i)=>{const d=document.createElement('div');d.className='tile c';d.innerHTML='<canvas width="128" height="64"></canvas><b>'+n+'</b>';emoBox.appendChild(d);face(d.firstChild.getContext('2d'),i);
+ d.onclick=()=>{if(need())send('EMO|'+i+'|6')}});
+
+/* ===== animation library (drawn on 128x64, t = 0..1 loops) ===== */
+function ground(g,t,n,y=54){for(let i=0;i<8;i++){const x=((i*24-t*24*n)%192+192)%192-24;g.fillRect(x,y,12,2)}}
+function man(g,x,y,ph,lean=0,s=1){const a=Math.sin(ph),b=Math.sin(ph+P),sx=x+lean*6,sy=y-15;g.beginPath();g.arc(x+lean*8,y-22,4,0,TAU);g.stroke();
+ line(g,x,y,x+lean*8,y-17);line(g,x,y,x+a*9,y+12);line(g,x,y,x+b*9,y+12);line(g,sx,sy,sx+b*8,sy+8);line(g,sx,sy,sx+a*8,sy+8)}
+function car(g,x,y,ph){g.fillRect(x-14,y-7,28,8);g.fillRect(x-7,y-12,13,6);for(const w of[-8,8]){col(g,BG);g.beginPath();g.arc(x+w,y+2,4.5,0,TAU);g.fill();col(g,FG);g.beginPath();g.arc(x+w,y+2,4.5,0,TAU);g.stroke();line(g,x+w,y+2,x+w+3*Math.cos(ph),y+2+3*Math.sin(ph))}}
+const ANIMS=[
+{name:'Running',draw:(g,t)=>{ground(g,t,2);man(g,64,40,t*TAU*2,.3)}},
+{name:'Sprinting',draw:(g,t)=>{ground(g,t,4);man(g,70,40,t*TAU*4,1.2);for(let i=0;i<5;i++){const x=((t*96+i*30)%140)-10;g.fillRect(100-x*0.6+20,14+i*8,14,1)}}},
+{name:'Romantic dance',draw:(g,t)=>{const u=t*TAU,s=Math.sin(u)*3;man(g,52+s,40,u*2,.1);man(g,78+s,40,u*2+P,-.1);tri(g,78+s,40,70+s,50,86+s,50);line(g,59+s,33,71+s,33);for(let i=0;i<3;i++){const p=(t+i/3)%1;heart(g,64+s+Math.sin(p*9+i)*8,28-p*26,2+(1-p)*2)}}},
+{name:'Cat & mouse chase',draw:(g,t)=>{g.fillRect(0,54,128,1);const run=Math.min(t/.62,1),mx=-10+run*110,hide=t>.62?Math.min((t-.62)/.12,1):0,cx=t<.62?mx-36:64+Math.min((t-.62)/.16,1)*40,ph=t<.78?t*TAU*8:0;
+ g.beginPath();g.arc(112,54,7,P,0);g.stroke();
+ if(hide<1){const my=50+hide*6;g.beginPath();g.ellipse(mx,my-3,6,4,0,0,TAU);g.fill();g.beginPath();g.arc(mx+5,my-7,2,0,TAU);g.fill();line(g,mx-6,my-3,mx-12,my-9+Math.sin(t*60)*3,mx-16,my-4)}
+ g.beginPath();g.ellipse(cx,42,14,7,0,0,TAU);g.fill();g.beginPath();g.arc(cx+13,37,6,0,TAU);g.fill();tri(g,cx+9,33,cx+11,27,cx+13,33);tri(g,cx+14,33,cx+17,27,cx+18,34);line(g,cx-14,40,cx-20,34,cx-22,28);
+ line(g,cx-8,46,cx-8+Math.sin(ph)*6,53);line(g,cx+8,46,cx+8+Math.sin(ph+P)*6,53);
+ if(t>.78)for(let i=0;i<3;i++){const a=t*20+i*2.1;g.fillRect(cx+13+Math.cos(a)*11,28+Math.sin(a)*4,3,3)}}},
+{name:'Car racing',draw:(g,t)=>{const u=t*TAU;g.fillRect(0,12,128,1);g.fillRect(0,60,128,1);ground(g,t,5,36);car(g,64+Math.sin(u)*30,28,t*TAU*8);car(g,64-Math.sin(u)*30,52,t*TAU*8);for(let i=0;i<4;i++){const x=((t*160+i*40)%160)-16;g.fillRect(x,18+i*10,10,1)}}}];
+const ac=[];
+ANIMS.forEach((a,i)=>{const d=document.createElement('div');d.className='tile';d.innerHTML='<canvas width="128" height="64"></canvas><b>'+a.name+'</b><div class="bar"><button class="p">Play once</button><button>Set as loop</button></div>';$('anis').appendChild(d);ac.push(d.firstChild);
+ const [b1,b2]=d.querySelectorAll('button');b1.onclick=async()=>{if(!need())return;try{await pushAnim(i,1);await send('PLAY|1')}catch(e){toast(e.message)}};
+ b2.onclick=()=>{document.querySelector('[name=xm][value="1"]').checked=true;$('xanim').value=i;$('xapply').click()};$('xanim').add(new Option(a.name,i))});
+setInterval(()=>{const t=(performance.now()/2000)%1;ac.forEach((c,i)=>{const g=c.getContext('2d');pre(g);ANIMS[i].draw(g,t)})},83);
+
+/* ===== push an animation: render 24 frames -> 1-bit bitmaps -> BLE ===== */
+const oc=document.createElement('canvas');oc.width=128;oc.height=64;
+function xbm(g){const d=g.getImageData(0,0,128,64).data,o=new Uint8Array(1024);for(let y=0;y<64;y++)for(let x=0;x<128;x++)if(d[(y*128+x)*4]>110)o[y*16+(x>>3)]|=1<<(x&7);return o}
+async function wr(u){try{await rx.writeValueWithResponse(u)}catch(e){await rx.writeValue(u)}}
+async function pushAnim(i,slot){const g=oc.getContext('2d',{willReadFrequently:true}),F=24,out=new Uint8Array(F*1024);
+ for(let f=0;f<F;f++){pre(g);ANIMS[i].draw(g,f/F);out.set(xbm(g),f*1024)}
+ await send('ANIB|'+slot+'|'+F+'|12');
+ for(let o=0;o<out.length;o+=160){await wr(out.slice(o,o+160));if(o%3200===0)toast('Sending '+ANIMS[i].name+'… '+Math.round(o/out.length*100)+'%')}
+ await new Promise(r=>setTimeout(r,500));toast(ANIMS[i].name+' is on the keychain')}
+
+/* ===== display settings ===== */
+const cfg=JSON.parse(localStorage.getItem('skCfg')||'{}');
+if(cfg.m!=null){document.querySelector('[name=xm][value="'+cfg.m+'"]').checked=true;$('xanim').value=cfg.a||0;$('xevery').value=cfg.e||0;$('xmsg').value=cfg.msg||'';$('xbrt').value=cfg.b||100}
+const upd=()=>{$('xc').textContent=$('xmsg').value.length+'/40';$('xbv').textContent=$('xbrt').value+'%'};
+['xmsg','xbrt'].forEach(id=>$(id).addEventListener('input',upd));upd();
+$('xbrt').onchange=()=>{cfg.b=+$('xbrt').value;localStorage.setItem('skCfg',JSON.stringify(cfg));if(rx)send('BRT|'+$('xbrt').value)};
+$('xapply').onclick=async()=>{if(!need())return;
+ const m=+document.querySelector('[name=xm]:checked').value,a=+$('xanim').value,e=Math.max(0,+$('xevery').value||0),msg=clean($('xmsg').value);
+ Object.assign(cfg,{m,a,e,msg,b:+$('xbrt').value});localStorage.setItem('skCfg',JSON.stringify(cfg));
+ try{await send('BRT|'+$('xbrt').value);if(m===1||(m===0&&e>0))await pushAnim(a,0);if(m===2)await send('MSG|'+(msg||'Hello!'));
+  await send('DSP|'+m+'|0|'+(m===0?e:0));toast(['Interactive eyes on','Animation loop running','Floating message running'][m])}catch(err){toast('Failed: '+err.message)}};
 render();draw();
 </script>
 </body>
